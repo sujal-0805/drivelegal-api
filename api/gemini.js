@@ -1,11 +1,19 @@
 export default async function handler(req, res) {
 
+  // Handle CORS preflight
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    res.status(200).end();
+    return;
+  }
+
+  if (req.method === 'GET') {
+    return res.status(200).json({ 
+      status: 'DriveLegal API is running' 
+    });
   }
 
   if (req.method !== 'POST') {
@@ -15,20 +23,22 @@ export default async function handler(req, res) {
   const API_KEY = process.env.GEMINI_API_KEY;
 
   if (!API_KEY) {
-    return res.status(500).json({ error: 'API key not configured' });
+    return res.status(500).json({ 
+      error: 'API key not configured' 
+    });
   }
 
   try {
     const { message, context, history, language } = req.body;
 
     if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
+      return res.status(400).json({ 
+        error: 'Message is required' 
+      });
     }
 
-    // Build messages array
     const messages = [];
 
-    // Add history if exists
     if (history && Array.isArray(history)) {
       for (const h of history) {
         if (h.role && h.text) {
@@ -40,7 +50,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // Add current message with context
     const fullMessage = context
       ? `${context}\n\nUser question: ${message}`
       : message;
@@ -50,7 +59,6 @@ export default async function handler(req, res) {
       parts: [{ text: fullMessage }]
     });
 
-    // Call Gemini API
     const geminiRes = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
       {
@@ -69,14 +77,13 @@ export default async function handler(req, res) {
     if (!geminiRes.ok) {
       const errorData = await geminiRes.json();
       console.error('Gemini error:', errorData);
-      return res.status(geminiRes.status).json({
+      return res.status(500).json({
         error: 'Gemini API error',
         details: errorData
       });
     }
 
     const data = await geminiRes.json();
-
     const answer = data?.candidates?.[0]
       ?.content?.parts?.[0]?.text
       ?? 'I could not find information on that.';
