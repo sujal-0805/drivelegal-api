@@ -1,6 +1,5 @@
 export default async function handler(req, res) {
 
-  // Handle CORS preflight
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', '*');
@@ -17,10 +16,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ 
+      error: 'Method not allowed' 
+    });
   }
 
-  const API_KEY = process.env.GEMINI_API_KEY;
+  const API_KEY = process.env.GROQ_API_KEY;
 
   if (!API_KEY) {
     return res.status(500).json({ 
@@ -37,55 +38,65 @@ export default async function handler(req, res) {
       });
     }
 
+    // Build messages for Groq
     const messages = [];
 
+    // System message with context
+    if (context) {
+      messages.push({
+        role: 'system',
+        content: context
+      });
+    }
+
+    // Add history
     if (history && Array.isArray(history)) {
       for (const h of history) {
         if (h.role && h.text) {
           messages.push({
-            role: h.role === 'user' ? 'user' : 'model',
-            parts: [{ text: h.text }]
+            role: h.role === 'user' ? 'user' : 'assistant',
+            content: h.text
           });
         }
       }
     }
 
-    const fullMessage = context
-      ? `${context}\n\nUser question: ${message}`
-      : message;
-
+    // Add current message
     messages.push({
       role: 'user',
-      parts: [{ text: fullMessage }]
+      content: message
     });
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`,
+    // Call Groq API
+    const groqRes = await fetch(
+      'https://api.groq.com/openai/v1/chat/completions',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${API_KEY}`
+        },
         body: JSON.stringify({
-          contents: messages,
-          generationConfig: {
-            maxOutputTokens: 300,
-            temperature: 0.3,
-          }
+          model: 'llama3-8b-8192',
+          messages: messages,
+          max_tokens: 300,
+          temperature: 0.3,
         })
       }
     );
 
-    if (!geminiRes.ok) {
-      const errorData = await geminiRes.json();
-      console.error('Gemini error:', errorData);
+    if (!groqRes.ok) {
+      const errorData = await groqRes.json();
+      console.error('Groq error:', errorData);
       return res.status(500).json({
-        error: 'Gemini API error',
+        error: 'AI API error',
         details: errorData
       });
     }
 
-    const data = await geminiRes.json();
-    const answer = data?.candidates?.[0]
-      ?.content?.parts?.[0]?.text
+    const data = await groqRes.json();
+    const answer = data?.choices?.[0]
+      ?.message?.content
       ?? 'I could not find information on that.';
 
     return res.status(200).json({ answer });
